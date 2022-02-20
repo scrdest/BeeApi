@@ -1,4 +1,5 @@
 import abc
+import functools
 import re
 
 from beeapi.core.stemming import NltkStemmer
@@ -20,52 +21,79 @@ class BaseDataDictParser(abc.ABC):
 
 class OFFCategoriesDictParser(BaseDataDictParser):
     DATA_COLUMN_INDEX = 1
+    DEFAULT_TRIE_DEPTH = 5
+
 
     @classmethod
-    def parse(cls, filepath, trie_max_depth=5, *args, **kwargs):
-        new_trie = Trie(maxdepth=trie_max_depth)
+    def _handle_line(cls, bin_line: bytes, lineno: int):
+        
         safe_length = (cls.DATA_COLUMN_INDEX + 1)
+        line = bin_line.decode("utf8")
 
-        with open(DICT_PATH, "rb") as data:
+        columns = line.split("\t")
+        if len(columns) < safe_length:
+            print(f"Skipping line {lineno} - insufficient columns!")
+
+        raw_data = columns[cls.DATA_COLUMN_INDEX]
+
+        deprefixer_match = wordmatcher.fullmatch(raw_data)
+        if not deprefixer_match:
+            print(f"Skipping line {lineno} due to lack of prefix match!")
+
+        deprefixed_data = deprefixer_match.group(2)
+        if not deprefixed_data:
+            print(f"Skipping line {lineno} due to lack of words!")
+
+        lang_prefix = deprefixer_match.group(1)
+
+        data_words = deprefixed_data.split("-")
+        lowercased_words = (word.lower() for word in data_words)
+
+        stemmer = NltkStemmer.get_stemmer_for(lang_prefix[:-1] if lang_prefix else None)
+        stemmed_words = (stemmer(word) for word in lowercased_words)
+
+        normalized_words = " ".join(stemmed_words)
+
+        return normalized_words
+
+
+    @classmethod
+    def _read_data(cls, filepath):
+        with open(filepath, "rb") as data:
             for (lineno, bin_line) in enumerate(data):
                 if lineno == 0:
                     continue
 
-                line = bin_line.decode("utf8")
+                yield bin_line, lineno
 
-                columns = line.split("\t")
-                if len(columns) < safe_length:
-                    print(f"Skipping line {lineno} - insufficient columns!")
 
-                raw_data = columns[cls.DATA_COLUMN_INDEX]
+    @classmethod
+    def index_data(cls, processed_line: str):
+        return processed_line
 
-                deprefixer_match = wordmatcher.fullmatch(raw_data)
-                if not deprefixer_match:
-                    print(f"Skipping line {lineno} due to lack of prefix match!")
 
-                deprefixed_data = deprefixer_match.group(2)
-                if not deprefixed_data:
-                    print(f"Skipping line {lineno} due to lack of words!")
+    @classmethod
+    def parse(cls, filepath, trie_max_depth=None, *args, **kwargs):
+        new_trie = Trie(maxdepth=trie_max_depth)
 
-                lang_prefix = deprefixer_match.group(1)
+        raw_data_stream = cls._read_data(
+            filepath=filepath
+        )
 
-                data_words = deprefixed_data.split("-")
-                lowercased_words = (word.lower() for word in data_words)
-
-                stemmer = NltkStemmer.get_stemmer_for(lang_prefix[:-1] if lang_prefix else None)
-                stemmed_words = (stemmer(word) for word in lowercased_words)
-
-                normalized_words = " ".join(stemmed_words)
-
-                # print(
-                #     lineno,
-                #     f"prefix: `{lang_prefix[:-1] if lang_prefix else ''}`",
-                #     normalized_words,
-                #     sep=" - "
-                # )
-
-                new_trie.insert(normalized_words, in_place=True)
+        for (bin_line, lineno) in raw_data_stream:
+            processed_line = cls._handle_line(bin_line=bin_line, lineno=lineno)
+            cls.index_data(processed_line=processed_line)
 
         return new_trie
 
 
+    @classmethod
+    @functools.lru_cache(maxsize=1)
+    def parse_cached(cls, filepath, trie_max_depth=None, *args, **kwargs):
+        result = cls.parse(
+            filepath=filepath,
+            trie_max_depth=trie_max_depth,
+            *args,
+            **kwargs
+        )
+        return result

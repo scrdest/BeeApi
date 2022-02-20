@@ -84,7 +84,7 @@ class Trie:
             if in_place:
                 self.data = local_data
                 self.entries = new_entries
-                return self.data
+                return self
 
             else:
                 new_trie = self.from_trie_data(
@@ -160,6 +160,7 @@ class Trie:
             subtrees = list(lens.values())
 
             while curr_depth < recursion_depth:
+                if isinstance(subtrees, list): print("LIST SUBTREES: ", subtrees)
                 subtrees = sum([list(sub.values()) for sub in subtrees], [])
                 curr_depth += 1
 
