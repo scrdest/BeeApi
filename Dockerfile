@@ -1,4 +1,4 @@
-FROM python:3.9-slim as builder
+FROM python:3.9-slim as prod
 
 WORKDIR /app
 
@@ -14,7 +14,15 @@ RUN rm poetry_installer.sh
 ENV PATH="/root/.local/bin:$PATH"
 
 COPY poetry.lock pyproject.toml ./
+COPY tasks.py ./
 COPY beeapi ./beeapi
-RUN poetry install
-ENTRYPOINT poetry shell
-#ENTRYPOINT poetry run python beeapi
+COPY spec ./spec
+RUN poetry install --no-dev
+RUN poetry run inv run-indexing
+ENTRYPOINT bash
+
+
+FROM prod as dev
+WORKDIR /app
+RUN poetry install # install dev requirements
+ENTRYPOINT bash

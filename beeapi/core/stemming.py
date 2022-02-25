@@ -1,8 +1,20 @@
 import functools
 
-from nltk.stem import SnowballStemmer
-
 from beeapi.core.abcs import BaseStemmer
+from beeapi.core.logging import get_logger
+
+logger = get_logger()
+
+
+NLTK_UNAVAILABLE, NLTK_ERR = True, None
+
+try:
+    from nltk.stem import SnowballStemmer
+except ImportError as nltk_import_err:
+    from beeapi.core.abcs import BaseStemmer as SnowballStemmer
+    NLTK_ERR = nltk_import_err
+else:
+    NLTK_UNAVAILABLE = False
 
 
 class BasicStemmer(BaseStemmer):
@@ -34,6 +46,10 @@ class NltkStemmer(BaseStemmer):
     }
 
     def __init__(self, language):
+        if NLTK_UNAVAILABLE:
+            logger.warning("The NLTK library required to use this class is not available!", exc_info=True)
+            raise NLTK_ERR
+
         self.nltk = SnowballStemmer(
             language=language
         )
@@ -57,3 +73,32 @@ class NltkStemmer(BaseStemmer):
             stemmer = NltkStemmer(language=language)
 
         return stemmer
+
+
+class WhooshSnowballStemmer(BaseStemmer):
+    from whoosh.lang.snowball import classes as snowball_classes
+
+    def __init__(self, stemmer):
+        self.stemmer = stemmer
+
+
+    def stem(self, string: str, *args, **kwargs) -> str:
+        processed = self.stemmer.stem(string)
+        return processed
+
+
+    @classmethod
+    @functools.lru_cache(maxsize=5)
+    def get_stemmer_for(cls, lang: str = None):
+        language = lang or "en"
+        stemmer_class = cls.snowball_classes.get(language)
+
+        if stemmer_class is None:
+            # If it's None at this point, it's not a Snowball-stemmable language
+            stemmer = BasicStemmer()
+
+        else:
+            stemmer = stemmer_class()
+
+        return cls(stemmer=stemmer)
+

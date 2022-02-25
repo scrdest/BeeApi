@@ -423,3 +423,5 @@ secring.*
 ### Project-specific
 # Original task specification
 /spec/
+/indices/
+/reports/
